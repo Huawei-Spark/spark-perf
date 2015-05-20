@@ -1,5 +1,7 @@
 package mllib.perf.util
 
+import org.apache.spark.mllib.clustering.PowerIterationClustering
+
 import scala.collection.mutable
 
 import org.apache.spark.mllib.linalg.{Vectors, Vector}
@@ -65,6 +67,45 @@ object DataGenerator {
 
     RandomRDDs.randomRDD(sc, new BinaryLabeledDataGenerator(numCols,threshold),
       numRows, numPartitions, seed)
+  }
+
+  def generateSinglyConnectedGraphWithWeakLinks(
+      sc: SparkContext,
+      nVertices: Int,
+      nWeakLinks: Int,
+      nPartitions: Int,
+      weakLinkFactor: Double = 0.1,
+      seed: Long = System.currentTimeMillis()): (RDD[(Long, Long, Double)], Seq[Long]) = {
+
+    System.err.println(s"nVertices in generate=$nVertices")
+    assert(nVertices >= 3, "Must provide at least 3 vertices")
+    assert(nWeakLinks < nVertices, "Number of weak links must be less than number of vertices")
+
+    val indices = Range(1, nVertices)
+    import collection.mutable
+    val weakIndices = new mutable.HashSet[Long]()
+    val rng = new util.Random(seed)
+    while (weakIndices.size < nWeakLinks) {
+      val index = 1 + rng.nextInt(nVertices + 1)
+      if (!weakIndices.contains(index)) {
+        weakIndices += index
+      }
+    }
+
+    val similarities = for (srcId <- 1 to nVertices) yield {
+      val weight = srcId match {
+        case _ if weakIndices.contains(srcId) => weakLinkFactor
+        case _ => 1.0
+      }
+      val destId = if (srcId < nVertices) {
+        srcId + 1L
+      } else {
+        1L
+      }
+      (srcId.toLong, destId, weight)
+    }
+    val weakIndicesList = weakIndices.iterator.toList.sorted
+    (sc.parallelize(similarities, nPartitions), weakIndicesList)
   }
 
   /**

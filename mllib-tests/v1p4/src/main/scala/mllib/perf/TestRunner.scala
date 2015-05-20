@@ -10,6 +10,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.SparkContext
 
 import mllib.perf.clustering.GaussianMixtureTest
+import mllib.perf.clustering.PowerIterationClusteringTest
 import mllib.perf.feature.Word2VecTest
 import mllib.perf.fpm.FPGrowthTest
 import mllib.perf.linalg.BlockMatrixMultTest
@@ -50,6 +51,7 @@ object TestRunner {
         case "block-matrix-mult" => new BlockMatrixMultTest(sc)
         case "word2vec" => new Word2VecTest(sc)
         case "gmm" => new GaussianMixtureTest(sc)
+        case "power-iteration-clustering" => new PowerIterationClusteringTest(sc)
       }
       test.initialize(testName, perfTestArgs)
       // Generate a new dataset for each test
