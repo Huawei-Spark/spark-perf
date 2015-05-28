@@ -9,20 +9,19 @@ import mllib.perf.{PerfTest}
 import collection.mutable
 import org.json4s.JValue
 import org.json4s.JsonDSL._
+import java.util.{TreeMap => JTreeMap}
 
 class PowerIterationClusteringTest(sc: SparkContext) extends PerfTest {
 
   type RDDType = (Long, Long, Double)
-  // TODO: refactor k-means and GMM code
   val NUM_POINTS = ("num-points", "number of points for clustering tests")
-  val NUM_CLUSTERS = ("num-clusters", "number of centers for clustering tests")
-//  val NUM_ITERATIONS = ("num-iterations", "number of iterations for the algorithm")
+  val NUM_CLUSTERS = ("num-clusters", "number of clusters")
   val WEAK_LINK_FACTOR = ("weak-link-factor", "link weight for links that represent graph partitions")
 
-  intOptions ++= Seq(NUM_CLUSTERS /* NUM_ITERATIONS*/)
+  intOptions ++= Seq(NUM_CLUSTERS)
   longOptions ++= Seq(NUM_POINTS)
   doubleOptions ++= Seq(WEAK_LINK_FACTOR)
-  val options = intOptions ++ stringOptions  ++ booleanOptions ++ longOptions ++ doubleOptions
+  val options = intOptions ++ stringOptions ++ booleanOptions ++ longOptions ++ doubleOptions
   addOptionsToParser()
 
   def runTest(rdd: RDD[RDDType]): PowerIterationClusteringModel = {
@@ -56,30 +55,40 @@ class PowerIterationClusteringTest(sc: SparkContext) extends PerfTest {
     val model = runTest(similarities)
     val nVertices: Int = longOptionValue(NUM_POINTS).toInt
     var weakx = 0
-    val expected = Array.fill(nVertices)(0L)
+    val expected = new JTreeMap[Int, mutable.TreeSet[Long]]()
     var wwx = 0
-    for (wx <- weakIndices) {
-      wwx += 1
-      var px = 0
-      while (px < wx && px < nVertices) {
-        expected(px) = wwx
+    var px = 1
+    for (wx <- mutable.Seq[Long](weakIndices: _*) :+ nVertices.toLong) {
+      val set = new mutable.TreeSet[Long]()
+      expected.put(wwx, set)
+      while (px <= wx.asInstanceOf[Long] && px <= nVertices) {
+        set.add(px)
         px += 1
       }
-      if (px < nVertices) {
-        expected(px) = -1L
-      }
+      wwx += 1
     }
-    val predictions = mutable.ArrayBuffer[Long](nVertices)
+    val predictions = new JTreeMap[Int, mutable.TreeSet[Long]]()
     model.assignments.collect().foreach { a =>
-      predictions += a.id
+      var set = predictions.get(a.cluster)
+      if (set == null) {
+        set = new mutable.TreeSet[Long]()
+        predictions.put(a.cluster, set)
+      }
+      set.add(a.id)
     }
-    System.err.println(s"predictions = ${predictions.mkString(",")}")
-    System.err.println(s"expected = ${expected.mkString(",")}")
-    assert(predictions == expected)
+    import collection.JavaConverters._
+    val smap = mutable.TreeSet(predictions.keySet.asScala.toSeq: _*).map { k =>
+      s"$k:${predictions.get(k).mkString(",")}"
+    }
+    System.err.println(s"predictions = ${smap.mkString("{", " ; ", "}")}")
+    val emap = mutable.TreeSet(expected.keySet.asScala.toSeq: _*).map { k =>
+      s"$k:${expected.get(k).mkString(",")}"
+    }
+    System.err.println(s"expected = ${emap.mkString("{", " ; ", "}")}")
+    assert(smap == emap)
 
     val duration = (System.currentTimeMillis() - start) / 1e3
     "time" -> duration
   }
-
 
 }

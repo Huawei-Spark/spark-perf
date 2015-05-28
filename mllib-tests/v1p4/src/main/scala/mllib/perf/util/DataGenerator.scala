@@ -86,25 +86,23 @@ object DataGenerator {
     val weakIndices = new mutable.HashSet[Long]()
     val rng = new util.Random(seed)
     while (weakIndices.size < nWeakLinks) {
-      val index = 1 + rng.nextInt(nVertices + 1)
+      val index = 1L + rng.nextInt(nVertices + 1)
       if (!weakIndices.contains(index)) {
         weakIndices += index
       }
     }
-
-    val similarities = for (srcId <- 1 to nVertices) yield {
+    val weakIndicesList = weakIndices.iterator.toList.sorted
+    System.err.println(s"weakIndices are ${weakIndicesList.mkString(",")}")
+    var nWeaks = 0
+    val similarities = for (srcId <- 1 to nVertices-1) yield {
       val weight = srcId match {
-        case _ if weakIndices.contains(srcId) => weakLinkFactor
-        case _ => 1.0
+        case _ if weakIndices.contains(srcId) => nWeaks += 1; weakLinkFactor
+        case _ => 1.0 * (nWeaks*nWeaks + 1)
       }
-      val destId = if (srcId < nVertices) {
-        srcId + 1L
-      } else {
-        1L
-      }
+      val destId = srcId + 1L
       (srcId.toLong, destId, weight)
     }
-    val weakIndicesList = weakIndices.iterator.toList.sorted
+    System.err.println(s"similarities are ${similarities.mkString(",")}")
     (sc.parallelize(similarities, nPartitions), weakIndicesList)
   }
 
