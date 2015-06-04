@@ -80,6 +80,7 @@ class PowerIterationClusteringTest(sc: SparkContext) extends PerfTest {
     val smap = mutable.TreeSet(predictions.keySet.asScala.toSeq: _*).map { k =>
       s"$k:${predictions.get(k).mkString(",")}"
     }
+    System.err.println(s"weaklinks=${weakIndices.mkString(",")}")
     System.err.println(s"predictions = ${smap.mkString("{", " ; ", "}")}")
     val emap = mutable.TreeSet(expected.keySet.asScala.toSeq: _*).map { k =>
       s"$k:${expected.get(k).mkString(",")}"

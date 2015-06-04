@@ -17,65 +17,65 @@ import org.apache.spark.SparkContext
 object DataGenerator {
 
   def generateLabeledPoints(
-      sc: SparkContext,
-      numRows: Long,
-      numCols: Int,
-      intercept: Double,
-      eps: Double,
-      numPartitions: Int,
-      seed: Long = System.currentTimeMillis(),
-      problem: String = ""): RDD[LabeledPoint] = {
+    sc: SparkContext,
+    numRows: Long,
+    numCols: Int,
+    intercept: Double,
+    eps: Double,
+    numPartitions: Int,
+    seed: Long = System.currentTimeMillis(),
+    problem: String = ""): RDD[LabeledPoint] = {
 
     RandomRDDs.randomRDD(sc,
-      new LinearDataGenerator(numCols,intercept, seed, eps, problem), numRows, numPartitions, seed)
+      new LinearDataGenerator(numCols, intercept, seed, eps, problem), numRows, numPartitions, seed)
 
   }
 
   def generateDistributedSquareMatrix(
-      sc: SparkContext,
-      m: Long,
-      n: Int,
-      numPartitions: Int,
-      seed: Long = System.currentTimeMillis()): RowMatrix = {
+    sc: SparkContext,
+    m: Long,
+    n: Int,
+    numPartitions: Int,
+    seed: Long = System.currentTimeMillis()): RowMatrix = {
 
     val data: RDD[Vector] = RandomRDDs.normalVectorRDD(sc, m, n, numPartitions, seed)
 
-    new RowMatrix(data,m,n)
+    new RowMatrix(data, m, n)
   }
 
   def generateClassificationLabeledPoints(
-      sc: SparkContext,
-      numRows: Long,
-      numCols: Int,
-      threshold: Double,
-      scaleFactor: Double,
-      numPartitions: Int,
-      seed: Long = System.currentTimeMillis(),
-      chiSq: Boolean = false): RDD[LabeledPoint] = {
+    sc: SparkContext,
+    numRows: Long,
+    numCols: Int,
+    threshold: Double,
+    scaleFactor: Double,
+    numPartitions: Int,
+    seed: Long = System.currentTimeMillis(),
+    chiSq: Boolean = false): RDD[LabeledPoint] = {
 
-    RandomRDDs.randomRDD(sc, new ClassLabelGenerator(numCols,threshold, scaleFactor, chiSq),
+    RandomRDDs.randomRDD(sc, new ClassLabelGenerator(numCols, threshold, scaleFactor, chiSq),
       numRows, numPartitions, seed)
   }
 
   def generateBinaryLabeledPoints(
-      sc: SparkContext,
-      numRows: Long,
-      numCols: Int,
-      threshold: Double,
-      numPartitions: Int,
-      seed: Long = System.currentTimeMillis()): RDD[LabeledPoint] = {
+    sc: SparkContext,
+    numRows: Long,
+    numCols: Int,
+    threshold: Double,
+    numPartitions: Int,
+    seed: Long = System.currentTimeMillis()): RDD[LabeledPoint] = {
 
-    RandomRDDs.randomRDD(sc, new BinaryLabeledDataGenerator(numCols,threshold),
+    RandomRDDs.randomRDD(sc, new BinaryLabeledDataGenerator(numCols, threshold),
       numRows, numPartitions, seed)
   }
 
   def generateSinglyConnectedGraphWithWeakLinks(
-      sc: SparkContext,
-      nVertices: Int,
-      nWeakLinks: Int,
-      nPartitions: Int,
-      weakLinkFactor: Double = 0.1,
-      seed: Long = System.currentTimeMillis()): (RDD[(Long, Long, Double)], Seq[Long]) = {
+    sc: SparkContext,
+    nVertices: Int,
+    nWeakLinks: Int,
+    nPartitions: Int,
+    weakLinkFactor: Double = 0.1,
+    seed: Long = System.currentTimeMillis()): (RDD[(Long, Long, Double)], Seq[Long]) = {
 
     System.err.println(s"nVertices in generate=$nVertices")
     assert(nVertices >= 3, "Must provide at least 3 vertices")
@@ -83,27 +83,53 @@ object DataGenerator {
 
     val indices = Range(1, nVertices)
     import collection.mutable
-    val weakIndices = new mutable.HashSet[Long]()
+    val weakIndicesSet = new mutable.HashSet[Long]()
     val rng = new util.Random(seed)
-    while (weakIndices.size < nWeakLinks) {
-      val index = 1L + rng.nextInt(nVertices + 1)
-      if (!weakIndices.contains(index)) {
-        weakIndices += index
+    while (weakIndicesSet.size < nWeakLinks) {
+      val index = 2L + rng.nextInt(nVertices - 1)
+      if (!weakIndicesSet.contains(index)) {
+        weakIndicesSet += index
       }
     }
-    val weakIndicesList = weakIndices.iterator.toList.sorted
-    System.err.println(s"weakIndices are ${weakIndicesList.mkString(",")}")
+    val weakIndices = weakIndicesSet.iterator.toList.sorted
+    System.err.println(s"!!weakIndices are ${weakIndices.mkString(",")}")
     var nWeaks = 0
-    val similarities = for (srcId <- 1 to nVertices-1) yield {
-      val weight = srcId match {
-        case _ if weakIndices.contains(srcId) => nWeaks += 1; weakLinkFactor
-        case _ => 1.0 * (nWeaks*nWeaks + 1)
+    var prevWeak = 0L
+    //    var srcId = 0L
+    var wwx = 0
+    val weakIndicesF = weakIndices :+ nVertices.toLong
+    val similarities = for (ix1 <- -1 until weakIndicesF.size - 1;
+                            srcId <- 0L until weakIndicesF(ix1 + 1);ix2 <- (if (ix1 >= 0) weakIndicesF(ix1) else 0L)
+                              to weakIndicesF(ix1 + 1)) yield {
+      //      val srcId = if (ix1 >= 0) weakIndicesF(ix1) else 0L
+      System.err.println(s"($srcId, $ix2)")
+      val nWeaks = ix1 + 1L
+      val out = /* for (destId <- (srcId + 1L) to ix2) yield */ {
+        val destId = ix2.toLong
+        System.err.println(s"destId=$destId for srcId=$srcId")
+        val weight = srcId match {
+          case _ if weakIndicesSet.contains(srcId) =>
+            System.err.println(s"** weak found ($srcId,$destId)")
+            weakLinkFactor
+          case _ =>
+            System.err.println(s"STRONG found ($srcId,$destId)")
+            1.0 * (nWeaks * nWeaks * nWeaks + 1)
+        }
+        Seq((srcId, destId, weight), (destId, srcId, weight))
       }
-      val destId = srcId + 1L
-      (srcId.toLong, destId, weight)
+      out //.flatten
     }
+    //    val similarities = for (srcId <- 1L to nVertices - 1) yield {
+    //      val weight = srcId match {
+    //        case _ if weakIndices.contains(srcId) => nWeaks += 1; weakLinkFactor
+    //        case _ => 1.0 * (nWeaks * nWeaks + 1)
+    //      }
+    //      val destId = srcId + 1L
+    //      Seq((srcId.toLong, destId, weight), (destId.toLong, srcId, weight))
+    //    }
+    val similaritiesFl = similarities.flatten
     System.err.println(s"similarities are ${similarities.mkString(",")}")
-    (sc.parallelize(similarities, nPartitions), weakIndicesList)
+    (sc.parallelize(similaritiesFl, nPartitions), weakIndices)
   }
 
   /**
@@ -118,15 +144,15 @@ object DataGenerator {
    *         with k categories indexed from 0: {0, 1, ..., k-1}.
    */
   def generateDecisionTreeLabeledPoints(
-      sc: SparkContext,
-      numRows: Long,
-      numCols: Int,
-      numPartitions: Int,
-      labelType: Int,
-      fracCategorical: Double,
-      fracBinary: Double,
-      treeDepth: Int,
-      seed: Long = System.currentTimeMillis()): (RDD[LabeledPoint], Map[Int, Int]) = {
+    sc: SparkContext,
+    numRows: Long,
+    numCols: Int,
+    numPartitions: Int,
+    labelType: Int,
+    fracCategorical: Double,
+    fracBinary: Double,
+    treeDepth: Int,
+    seed: Long = System.currentTimeMillis()): (RDD[LabeledPoint], Map[Int, Int]) = {
 
     val highArity = 20
 
@@ -165,15 +191,15 @@ object DataGenerator {
 
 
   def randomBalancedDecisionTree(
-      depth: Int,
-      labelType: Int,
-      featureArity: Array[Int],
-      seed: Long = System.currentTimeMillis()): DecisionTreeModel = {
+    depth: Int,
+    labelType: Int,
+    featureArity: Array[Int],
+    seed: Long = System.currentTimeMillis()): DecisionTreeModel = {
 
     require(depth >= 0, s"randomBalancedDecisionTree given depth < 0.")
     require(depth <= featureArity.size,
       s"randomBalancedDecisionTree requires depth <= featureArity.size," +
-      s" but depth = $depth and featureArity.size = ${featureArity.size}")
+        s" but depth = $depth and featureArity.size = ${featureArity.size}")
     val isRegression = labelType == 0
     if (!isRegression) {
       require(labelType >= 2, s"labelType must be >= 2 for classification. 0 indicates regression.")
@@ -210,12 +236,12 @@ object DataGenerator {
    * @return
    */
   def randomBalancedDecisionTreeHelper(
-      nodeIndex: Int,
-      subtreeDepth: Int,
-      featureArity: Array[Int],
-      labelGenerator: RandomDataGenerator[Pair[Double, Double]],
-      usedFeatures: Set[Int],
-      rng: scala.util.Random): Node = {
+    nodeIndex: Int,
+    subtreeDepth: Int,
+    featureArity: Array[Int],
+    labelGenerator: RandomDataGenerator[Pair[Double, Double]],
+    usedFeatures: Set[Int],
+    rng: scala.util.Random): Node = {
 
     if (subtreeDepth == 0) {
       // This case only happens for a depth 0 tree.
@@ -244,7 +270,7 @@ object DataGenerator {
       // Put nCatsSplit categories on left, and the rest on the right.
       // nCatsSplit is in {1,...,arity-1}.
       val nCatsSplit = rng.nextInt(featureArity(feature) - 1) + 1
-      val splitCategories = rng.shuffle(Range(0,featureArity(feature)).toList).take(nCatsSplit)
+      val splitCategories = rng.shuffle(Range(0, featureArity(feature)).toList).take(nCatsSplit)
       new Split(feature = feature, threshold = 0,
         featureType = FeatureType.Categorical, categories =
           splitCategories.asInstanceOf[List[Double]])
@@ -270,12 +296,12 @@ object DataGenerator {
   }
 
   def generateKMeansVectors(
-      sc: SparkContext,
-      numRows: Long,
-      numCols: Int,
-      numCenters: Int,
-      numPartitions: Int,
-      seed: Long = System.currentTimeMillis()): RDD[Vector] = {
+    sc: SparkContext,
+    numRows: Long,
+    numCols: Int,
+    numCenters: Int,
+    numPartitions: Int,
+    seed: Long = System.currentTimeMillis()): RDD[Vector] = {
 
     RandomRDDs.randomRDD(sc, new KMeansDataGenerator(numCenters, numCols, seed),
       numRows, numPartitions, seed)
@@ -285,25 +311,25 @@ object DataGenerator {
   // Problems with having a userID or productID in the test set but not training set
   // leads to a lot of work...
   def generateRatings(
-      sc: SparkContext,
-      numUsers: Int,
-      numProducts: Int,
-      numRatings: Long,
-      implicitPrefs: Boolean,
-      numPartitions: Int,
-      seed: Long = System.currentTimeMillis()): (RDD[Rating],RDD[Rating]) = {
+    sc: SparkContext,
+    numUsers: Int,
+    numProducts: Int,
+    numRatings: Long,
+    implicitPrefs: Boolean,
+    numPartitions: Int,
+    seed: Long = System.currentTimeMillis()): (RDD[Rating], RDD[Rating]) = {
 
     val train = RandomRDDs.randomRDD(sc,
-      new RatingGenerator(numUsers, numProducts,implicitPrefs),
+      new RatingGenerator(numUsers, numProducts, implicitPrefs),
       numRatings, numPartitions, seed).cache()
 
     val test = RandomRDDs.randomRDD(sc,
-      new RatingGenerator(numUsers, numProducts,implicitPrefs),
+      new RatingGenerator(numUsers, numProducts, implicitPrefs),
       math.ceil(numRatings * 0.25).toLong, numPartitions, seed + 24)
 
     // Now get rid of duplicate ratings and remove non-existant userID's
     // and prodID's from the test set
-    val commons: PairRDDFunctions[(Int,Int),Rating] =
+    val commons: PairRDDFunctions[(Int, Int), Rating] =
       new PairRDDFunctions(train.keyBy(rating => (rating.user, rating.product)).cache())
 
     val exact = commons.join(test.keyBy(rating => (rating.user, rating.product)))
@@ -311,15 +337,15 @@ object DataGenerator {
     val trainPruned = commons.subtractByKey(exact).map(_._2).cache()
 
     // Now get rid of users that don't exist in the train set
-    val trainUsers: RDD[(Int,Rating)] = trainPruned.keyBy(rating => rating.user)
-    val testUsers: PairRDDFunctions[Int,Rating] =
+    val trainUsers: RDD[(Int, Rating)] = trainPruned.keyBy(rating => rating.user)
+    val testUsers: PairRDDFunctions[Int, Rating] =
       new PairRDDFunctions(test.keyBy(rating => rating.user))
     val testWithAdditionalUsers = testUsers.subtractByKey(trainUsers)
 
-    val userPrunedTestProds: RDD[(Int,Rating)] =
+    val userPrunedTestProds: RDD[(Int, Rating)] =
       testUsers.subtractByKey(testWithAdditionalUsers).map(_._2).keyBy(rating => rating.product)
 
-    val trainProds: RDD[(Int,Rating)] = trainPruned.keyBy(rating => rating.product)
+    val trainProds: RDD[(Int, Rating)] = trainPruned.keyBy(rating => rating.product)
 
     val testWithAdditionalProds =
       new PairRDDFunctions[Int, Rating](userPrunedTestProds).subtractByKey(trainProds)
@@ -333,22 +359,22 @@ object DataGenerator {
 }
 
 class RatingGenerator(
-    private val numUsers: Int,
-    private val numProducts: Int,
-    private val implicitPrefs: Boolean) extends RandomDataGenerator[Rating] {
+  private val numUsers: Int,
+  private val numProducts: Int,
+  private val implicitPrefs: Boolean) extends RandomDataGenerator[Rating] {
 
   private val rng = new java.util.Random()
 
   private val observed = new mutable.HashMap[(Int, Int), Boolean]()
 
   override def nextValue(): Rating = {
-    var tuple = (rng.nextInt(numUsers),rng.nextInt(numProducts))
-    while (observed.getOrElse(tuple,false)){
-      tuple = (rng.nextInt(numUsers),rng.nextInt(numProducts))
+    var tuple = (rng.nextInt(numUsers), rng.nextInt(numProducts))
+    while (observed.getOrElse(tuple, false)) {
+      tuple = (rng.nextInt(numUsers), rng.nextInt(numProducts))
     }
     observed += (tuple -> true)
 
-    val rating = if (implicitPrefs) rng.nextInt(2)*1.0 else rng.nextDouble()*5
+    val rating = if (implicitPrefs) rng.nextInt(2) * 1.0 else rng.nextDouble() * 5
 
     new Rating(tuple._1, tuple._2, rating)
   }
@@ -362,10 +388,10 @@ class RatingGenerator(
 
 // For general classification
 class ClassLabelGenerator(
-    private val numFeatures: Int,
-    private val threshold: Double,
-    private val scaleFactor: Double,
-    private val chiSq: Boolean) extends RandomDataGenerator[LabeledPoint] {
+  private val numFeatures: Int,
+  private val threshold: Double,
+  private val scaleFactor: Double,
+  private val chiSq: Boolean) extends RandomDataGenerator[LabeledPoint] {
 
   private val rng = new java.util.Random()
 
@@ -410,26 +436,26 @@ class BinaryLabeledDataGenerator(
 }
 
 class LinearDataGenerator(
-    val numFeatures: Int,
-    val intercept: Double,
-    val seed: Long,
-    val eps: Double,
-    val problem: String = "",
-    val sparsity: Double = 1.0) extends RandomDataGenerator[LabeledPoint] {
+  val numFeatures: Int,
+  val intercept: Double,
+  val seed: Long,
+  val eps: Double,
+  val problem: String = "",
+  val sparsity: Double = 1.0) extends RandomDataGenerator[LabeledPoint] {
 
   private val rng = new java.util.Random(seed)
 
   private val weights = Array.fill(numFeatures)(rng.nextDouble())
-  private val nnz: Int = math.ceil(numFeatures*sparsity).toInt
+  private val nnz: Int = math.ceil(numFeatures * sparsity).toInt
 
   override def nextValue(): LabeledPoint = {
-    val x = Array.fill[Double](nnz)(2*rng.nextDouble()-1)
+    val x = Array.fill[Double](nnz)(2 * rng.nextDouble() - 1)
 
-    val y = weights.zip(x).map(p => p._1 * p._2).sum + intercept + eps*rng.nextGaussian()
+    val y = weights.zip(x).map(p => p._1 * p._2).sum + intercept + eps * rng.nextGaussian()
     val yD =
-      if (problem == "SVM"){
+      if (problem == "SVM") {
         if (y < 0.0) 0.0 else 1.0
-      } else{
+      } else {
         y
       }
 
@@ -535,8 +561,8 @@ class FeaturesGenerator(val categoricalArities: Array[Int], val numContinuous: I
 
   /**
    * @return categoricalFeaturesInfo Map storing arity of categorical features.
-   *                                 E.g., an entry (n -> k) indicates that feature n is categorical
-   *                                 with k categories indexed from 0: {0, 1, ..., k-1}.
+   *         E.g., an entry (n -> k) indicates that feature n is categorical
+   *         with k categories indexed from 0: {0, 1, ..., k-1}.
    */
   def getCategoricalFeaturesInfo: Map[Int, Int] = {
     // Categorical features are indexed from 0 because of the implementation of nextValue().
@@ -547,9 +573,9 @@ class FeaturesGenerator(val categoricalArities: Array[Int], val numContinuous: I
 
 
 class KMeansDataGenerator(
-    val numCenters: Int,
-    val numColumns: Int,
-    val seed: Long) extends RandomDataGenerator[Vector] {
+  val numCenters: Int,
+  val numColumns: Int,
+  val seed: Long) extends RandomDataGenerator[Vector] {
 
   private val rng = new java.util.Random(seed)
   private val rng2 = new java.util.Random(seed + 24)
@@ -561,13 +587,13 @@ class KMeansDataGenerator(
     val randSum = rand.sum
     val scaled = rand.map(x => x / randSum)
 
-    (1 to numCenters).map{i =>
+    (1 to numCenters).map { i =>
       scaled.slice(0, i).sum
     }
   }
 
-  private val centers = (0 until numCenters).map{i =>
-    Array.fill(numColumns)((2 * rng.nextDouble() - 1)*scale_factors(i))
+  private val centers = (0 until numCenters).map { i =>
+    Array.fill(numColumns)((2 * rng.nextDouble() - 1) * scale_factors(i))
   }
 
   override def nextValue(): Vector = {
